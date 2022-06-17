@@ -5,6 +5,7 @@ import os
 import json
 from urllib.parse import urljoin, urlsplit
 
+from aiobotocore.session import get_session
 import aiohttp
 import asyncio
 import numpy
@@ -92,14 +93,15 @@ class EPT(object):
 
     async def adata(self):
         limit = 10
-        connector = aiohttp.TCPConnector(limit=None)
-        async with aiohttp.ClientSession(connector=connector) as session, TaskPool(
+        #connector = aiohttp.TCPConnector(limit=None)
+        session = get_session()
+        async with session.create_client('s3') as client, TaskPool(
             limit
         ) as tasks:
 
             for key in self.overlaps_dict:
                 url = "/ept-data/" + key.id() + ".laz"
-                await tasks.put(self.endpoint.aget(url, session))
+                await tasks.put(self.endpoint.aget(url, client))
 
         laz = [LAZ(tasks.data[i]["result"]) for i in tasks.data]
         return laz
@@ -110,10 +112,11 @@ class EPT(object):
 
         f = "/ept-hierarchy/" + k.id() + ".json"
 
-        async with aiohttp.ClientSession() as session:
-            d = await self.endpoint.aget(f, session)
+        session = get_session()
+        async with session.create_client('s3') as client:
+            d = await self.endpoint.aget(f, client)
             hier = json.loads(d)
-            await self._overlaps(self.endpoint, self.overlaps_dict, hier, k, session)
+            await self._overlaps(self.endpoint, self.overlaps_dict, hier, k, client)
 
     async def _overlaps(self, endpoint, overlaps_dict, hier, key, session):
 

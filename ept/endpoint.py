@@ -6,6 +6,8 @@ import json
 import aiohttp
 import aiofiles
 import asyncio
+from aiobotocore.session import get_session
+from urllib.parse import urlparse
 
 from .pool import TaskPool
 
@@ -15,6 +17,26 @@ class Driver(object):
         self.root = root
         self.parts = []
         self.concurrency = concurrency
+
+class S3Driver(Driver):
+    def __init__(self, root):
+        super().__init__(root)
+
+    async def get(self, part, client=None):
+
+        url = self.root + part
+        o = urlparse(url , allow_fragments=False)
+
+        if client is not None:
+            response = await client.get_object(Bucket=o.netloc, Key=o.path.lstrip('/'))
+            async with response['Body'] as stream:
+                return await stream.read()
+
+        session = get_session()
+        async with session.create_client('s3') as client:
+            response = await client.get_object(Bucket=o.netloc, Key=o.path.lstrip('/'))
+            async with response['Body'] as stream:
+                return await stream.read()
 
 
 class Http(Driver):
@@ -72,9 +94,9 @@ class Endpoint(object):
         self.root = root
         self.query = query
 
-        if root.startswith("http://") or root.startswith("https://"):
+        if root.startswith("s3://") or root.startswith("s3://"):
             self.remote = True
-            self.driver = Http(root, query)
+            self.driver = S3Driver(root)
         else:
             self.remote = False
             self.driver = File(root)
@@ -85,4 +107,4 @@ class Endpoint(object):
         return o
 
     async def aget(self, part=None, session=None, tpool=None):
-        return await self.driver.get(part, session, tpool)
+        return await self.driver.get(part, session)
